@@ -1,7 +1,7 @@
 name: Sync upstream
 
 # Traz o que o anomalyco/opencode publicou para o fork Naoriky-VFX/opencode.
-# Só avança em fast-forward: se o fork tiver commit próprio, o job falha e avisa
+# Usa merge (não reset, não force push): se houver conflito, o job falha e avisa
 # em vez de sobrescrever qualquer coisa.
 
 on:
@@ -38,29 +38,24 @@ jobs:
           git remote add upstream https://github.com/anomalyco/opencode.git || true
           git fetch upstream dev
 
-      - name: Quantos commits de diferença
+      - name: Ver diferença
         id: diff
         run: |
           NOVOS=$(git rev-list --count HEAD..upstream/dev)
-          PROPRIOS=$(git rev-list --count upstream/dev..HEAD)
           echo "novos=$NOVOS" >> "$GITHUB_OUTPUT"
-          echo "proprios=$PROPRIOS" >> "$GITHUB_OUTPUT"
-          echo "upstream: $NOVOS | fork: $PROPRIOS"
-
-      - name: Parar se o fork tem commit próprio
-        if: steps.diff.outputs.proprios != '0'
-        run: |
-          echo "::error::O fork tem ${{ steps.diff.outputs.proprios }} commit(s) que o upstream não tem. Nada foi alterado."
-          git log --oneline upstream/dev..HEAD | head -20
-          exit 1
+          echo "commits novos no upstream: $NOVOS"
 
       - name: Nada a fazer
         if: steps.diff.outputs.novos == '0'
         run: echo "Fork já está atualizado."
 
-      - name: Fast-forward e push
-        if: steps.diff.outputs.novos != '0' && steps.diff.outputs.proprios == '0'
+      - name: Merge e push
+        if: steps.diff.outputs.novos != '0'
         run: |
           git log --oneline HEAD..upstream/dev | head -20
-          git merge --ff-only upstream/dev
+          if ! git merge --no-edit upstream/dev; then
+            echo "::error::Conflito ao mesclar upstream/dev. Nada foi enviado."
+            git merge --abort || true
+            exit 1
+          fi
           git push origin dev
